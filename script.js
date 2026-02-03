@@ -11,21 +11,22 @@ const startButton = document.getElementById("startButton");
 const restartButton = document.getElementById("restartButton");
 
 const recyclableItems = [
-  { label: "Garrafa", color: "#5bc0eb" },
-  { label: "Papel", color: "#f7b32b" },
-  { label: "Lata", color: "#9bc53d" },
-  { label: "Vidro", color: "#6a4c93" }
+  { label: "Garrafa", icon: "🥤", color: "#5bc0eb" },
+  { label: "Papel", icon: "📄", color: "#f7b32b" },
+  { label: "Lata", icon: "🥫", color: "#9bc53d" },
+  { label: "Vidro", icon: "🍾", color: "#6a4c93" }
 ];
 
 const nonRecyclableItems = [
-  { label: "Fralda", color: "#ef6461" },
-  { label: "Borracha", color: "#ff6f59" },
-  { label: "Copo", color: "#f25f5c" }
+  { label: "Fralda", icon: "🧷", color: "#ef6461" },
+  { label: "Borracha", icon: "🧽", color: "#ff6f59" },
+  { label: "Copo", icon: "☕", color: "#f25f5c" }
 ];
 
 const gameState = {
   items: [],
   splashes: [],
+  slices: [],
   lastSpawn: 0,
   score: 0,
   misses: 0,
@@ -33,7 +34,7 @@ const gameState = {
   running: false,
   demo: true,
   lastTime: 0,
-  pointer: { x: 0, y: 0, active: false }
+  pointer: { x: 0, y: 0, lastX: 0, lastY: 0, active: false }
 };
 
 const resizeCanvas = () => {
@@ -60,17 +61,23 @@ const spawnItem = () => {
   const isRecyclable = Math.random() > 0.25;
   const pool = isRecyclable ? recyclableItems : nonRecyclableItems;
   const base = pool[Math.floor(Math.random() * pool.length)];
-  const size = 50 + Math.random() * 20;
+  const size = 48 + Math.random() * 24;
+  const launchAngle = (-Math.PI / 2) + (Math.random() * 0.8 - 0.4);
+  const launchSpeed = 520 + Math.random() * 140;
 
   gameState.items.push({
     id: crypto.randomUUID(),
     label: base.label,
+    icon: base.icon,
     color: base.color,
     x: 80 + Math.random() * (window.innerWidth - 160),
     y: window.innerHeight + size,
     radius: size / 2,
-    speed: 180 + Math.random() * 120,
-    drift: -60 + Math.random() * 120,
+    vx: Math.cos(launchAngle) * launchSpeed,
+    vy: Math.sin(launchAngle) * launchSpeed,
+    rotation: Math.random() * Math.PI * 2,
+    spin: (Math.random() * 2 - 1) * 2.2,
+    slicedAt: null,
     isRecyclable,
     sliced: false
   });
@@ -84,6 +91,30 @@ const addSplash = (item) => {
     radius: item.radius,
     life: 0.4
   });
+};
+
+const addSlice = (startX, startY, endX, endY, isRecyclable) => {
+  gameState.slices.push({
+    startX,
+    startY,
+    endX,
+    endY,
+    life: 0.25,
+    color: isRecyclable ? "rgba(46, 192, 123, 0.9)" : "rgba(239, 100, 97, 0.9)"
+  });
+};
+
+const distanceToSegment = (px, py, x1, y1, x2, y2) => {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  if (dx === 0 && dy === 0) {
+    return Math.hypot(px - x1, py - y1);
+  }
+  const t = ((px - x1) * dx + (py - y1) * dy) / (dx * dx + dy * dy);
+  const clamped = Math.max(0, Math.min(1, t));
+  const closestX = x1 + clamped * dx;
+  const closestY = y1 + clamped * dy;
+  return Math.hypot(px - closestX, py - closestY);
 };
 
 const update = (timestamp) => {
@@ -105,12 +136,17 @@ const update = (timestamp) => {
     gameState.lastSpawn = 0;
   }
 
+  const gravity = 900;
   gameState.items.forEach((item) => {
-    item.y -= item.speed * delta;
-    item.x += item.drift * delta;
+    item.vy += gravity * delta;
+    item.x += item.vx * delta;
+    item.y += item.vy * delta;
+    item.rotation += item.spin * delta;
   });
 
-  gameState.items = gameState.items.filter((item) => item.y + item.radius > -40);
+  gameState.items = gameState.items.filter(
+    (item) => item.y - item.radius < window.innerHeight + 60 && item.x + item.radius > -60
+  );
 
   gameState.splashes.forEach((splash) => {
     splash.life -= delta;
@@ -119,12 +155,33 @@ const update = (timestamp) => {
 
   gameState.splashes = gameState.splashes.filter((splash) => splash.life > 0);
 
+  gameState.slices.forEach((slice) => {
+    slice.life -= delta;
+  });
+  gameState.slices = gameState.slices.filter((slice) => slice.life > 0);
+
   if (gameState.pointer.active) {
     gameState.items.forEach((item) => {
-      const distance = Math.hypot(gameState.pointer.x - item.x, gameState.pointer.y - item.y);
-      if (!item.sliced && distance < item.radius + 10) {
+      const distance = distanceToSegment(
+        item.x,
+        item.y,
+        gameState.pointer.lastX,
+        gameState.pointer.lastY,
+        gameState.pointer.x,
+        gameState.pointer.y
+      );
+      const hitRadius = item.radius + 14;
+      if (!item.sliced && distance < hitRadius) {
         item.sliced = true;
+        item.slicedAt = performance.now();
         addSplash(item);
+        addSlice(
+          gameState.pointer.lastX,
+          gameState.pointer.lastY,
+          gameState.pointer.x,
+          gameState.pointer.y,
+          item.isRecyclable
+        );
         if (!gameState.demo) {
           if (item.isRecyclable) {
             gameState.score += 1;
@@ -136,7 +193,12 @@ const update = (timestamp) => {
     });
   }
 
-  gameState.items = gameState.items.filter((item) => !item.sliced);
+  gameState.items = gameState.items.filter((item) => {
+    if (!item.sliced) {
+      return true;
+    }
+    return performance.now() - item.slicedAt < 180;
+  });
 
   if (!gameState.demo) {
     if (gameState.misses >= 3) {
@@ -171,25 +233,50 @@ const draw = () => {
   context.restore();
 
   gameState.items.forEach((item) => {
+    const sliceFade = item.sliced ? Math.max(0, 1 - (performance.now() - item.slicedAt) / 180) : 1;
+    context.save();
+    context.translate(item.x, item.y);
+    context.rotate(item.rotation);
+    context.globalAlpha = sliceFade;
+
     context.beginPath();
     context.fillStyle = item.color;
     context.strokeStyle = "rgba(255, 255, 255, 0.8)";
     context.lineWidth = 2;
-    context.arc(item.x, item.y, item.radius, 0, Math.PI * 2);
+    context.ellipse(0, 0, item.radius * 1.05, item.radius * 0.9, 0, 0, Math.PI * 2);
     context.fill();
     context.stroke();
 
     context.fillStyle = "#0a1117";
-    context.font = "bold 14px 'Segoe UI', sans-serif";
+    context.font = "bold 22px 'Segoe UI Emoji', sans-serif";
     context.textAlign = "center";
-    context.fillText(item.label, item.x, item.y + 4);
+    context.fillText(item.icon, 0, 8);
+
+    context.fillStyle = "rgba(10, 17, 23, 0.85)";
+    context.font = "bold 12px 'Segoe UI', sans-serif";
+    context.fillText(item.label, 0, item.radius + 16);
+    context.restore();
+  });
+
+  gameState.slices.forEach((slice) => {
+    context.save();
+    context.globalAlpha = slice.life * 4;
+    context.strokeStyle = slice.color;
+    context.lineWidth = 6;
+    context.lineCap = "round";
+    context.beginPath();
+    context.moveTo(slice.startX, slice.startY);
+    context.lineTo(slice.endX, slice.endY);
+    context.stroke();
+    context.restore();
   });
 
   if (gameState.pointer.active) {
     context.beginPath();
     context.strokeStyle = "rgba(46, 192, 123, 0.6)";
-    context.lineWidth = 4;
-    context.arc(gameState.pointer.x, gameState.pointer.y, 24, 0, Math.PI * 2);
+    context.lineWidth = 3;
+    context.moveTo(gameState.pointer.lastX, gameState.pointer.lastY);
+    context.lineTo(gameState.pointer.x, gameState.pointer.y);
     context.stroke();
   }
 };
@@ -213,6 +300,8 @@ const startGame = () => {
 
 canvas.addEventListener("mousemove", (event) => {
   const rect = canvas.getBoundingClientRect();
+  gameState.pointer.lastX = gameState.pointer.x;
+  gameState.pointer.lastY = gameState.pointer.y;
   gameState.pointer.x = event.clientX - rect.left;
   gameState.pointer.y = event.clientY - rect.top;
   gameState.pointer.active = true;
@@ -225,6 +314,8 @@ canvas.addEventListener("mouseleave", () => {
 canvas.addEventListener("touchstart", (event) => {
   const touch = event.touches[0];
   const rect = canvas.getBoundingClientRect();
+  gameState.pointer.lastX = gameState.pointer.x;
+  gameState.pointer.lastY = gameState.pointer.y;
   gameState.pointer.x = touch.clientX - rect.left;
   gameState.pointer.y = touch.clientY - rect.top;
   gameState.pointer.active = true;
@@ -233,6 +324,8 @@ canvas.addEventListener("touchstart", (event) => {
 canvas.addEventListener("touchmove", (event) => {
   const touch = event.touches[0];
   const rect = canvas.getBoundingClientRect();
+  gameState.pointer.lastX = gameState.pointer.x;
+  gameState.pointer.lastY = gameState.pointer.y;
   gameState.pointer.x = touch.clientX - rect.left;
   gameState.pointer.y = touch.clientY - rect.top;
 });
