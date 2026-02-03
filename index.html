@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="pt-PT">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Recycling Ninja</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="hud">
+    <div class="brand">
+      <h1>Recycling Ninja</h1>
+      <p>por <strong>costa_021</strong></p>
+    </div>
+    <div class="scoreboard">
+      <div>Pontos: <span id="score">0</span></div>
+      <div>Erros: <span id="misses">0</span>/3</div>
+      <div>Tempo: <span id="time">60</span>s</div>
+    </div>
+  </div>
+
+  <canvas id="game" aria-label="Área do jogo"></canvas>
+
+  <div class="panel" id="startPanel">
+    <h2>Missão: cortar apenas recicláveis</h2>
+    <ul>
+      <li>Itens recicláveis dão pontos.</li>
+      <li>Itens não recicláveis são as “bombas”.</li>
+      <li>3 erros ou tempo esgotado termina o jogo.</li>
+    </ul>
+    <button id="startButton">Começar</button>
+  </div>
+
+  <div class="panel hidden" id="endPanel">
+    <h2>Fim de jogo</h2>
+    <p id="endMessage"></p>
+    <button id="restartButton">Jogar novamente</button>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
